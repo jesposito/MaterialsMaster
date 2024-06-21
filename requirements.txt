@@ -1,0 +1,4 @@
+discord.py
+spacy
+cerberus
+python-dotenv
