@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from dateparser import parse
+from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger('discord')
 
@@ -19,12 +20,38 @@ schema = {
 v = Validator(schema)
 
 class RequisitionFlow(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, conn):
         self.bot = bot
+        self.conn = conn
         self.channel_ids = {}
         self.active_requisitions = {}
         self.reminder_tasks = {}
         logger.info("RequisitionFlow cog initialized.")
+        self.create_tables()
+
+    def create_tables(self):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS requisitions (
+                    id SERIAL PRIMARY KEY,
+                    requester BIGINT,
+                    material TEXT,
+                    quantity INTEGER,
+                    payment TEXT,
+                    deadline TIMESTAMP,
+                    accepted_by BIGINT[],
+                    completed_by BIGINT[],
+                    message_id BIGINT
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS channels (
+                    guild_id BIGINT PRIMARY KEY,
+                    requisitions_channel_id BIGINT,
+                    archive_channel_id BIGINT
+                );
+            """)
+            self.conn.commit()
 
     def validate_request(self, data):
         logger.debug(f"Validating request data: {data}")
@@ -33,11 +60,10 @@ class RequisitionFlow(commands.Cog):
             logger.warning(f"Validation failed: {v.errors}")
         return is_valid
 
-    async def send_reminder(self, user, message, message_id):  # Ensure this is declared correctly
+    async def send_reminder(self, user, message, message_id):
         logger.info(f"Scheduling reminder for user {user} with message: {message}")
-        # Example: Remind after 1 hour
         task = asyncio.create_task(self.remind_later(user, message, 3600))
-        self.reminder_tasks[message_id] = task  # Here message_id is used
+        self.reminder_tasks[message_id] = task
 
     async def remind_later(self, user, message, delay):
         await asyncio.sleep(delay)
@@ -46,21 +72,21 @@ class RequisitionFlow(commands.Cog):
 
     @commands.command(name='mm_set_channels')
     async def mm_set_channels(self, ctx, requisitions_channel_id: int, archive_channel_id: int):
-        """Set the channel IDs for requisitions and archive per guild/server"""
-        guild_id = ctx.guild.id  # Get the guild ID from the context
-
-        # Store channel IDs in a dictionary with the guild ID as the key
-        if guild_id not in self.channel_ids:
-            self.channel_ids[guild_id] = {}
-
-        self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID'] = requisitions_channel_id
-        self.channel_ids[guild_id]['ARCHIVE_CHANNEL_ID'] = archive_channel_id
+        guild_id = ctx.guild.id
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO channels (guild_id, requisitions_channel_id, archive_channel_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id) DO UPDATE
+                SET requisitions_channel_id = EXCLUDED.requisitions_channel_id,
+                    archive_channel_id = EXCLUDED.archive_channel_id;
+            """, (guild_id, requisitions_channel_id, archive_channel_id))
+            self.conn.commit()
 
         await ctx.send(f"Requisition channel set to <#{requisitions_channel_id}> and archive channel set to <#{archive_channel_id}> for {ctx.guild.name}")
 
     @commands.command(name='mm_request')
     async def mm_request(self, ctx, *, user_input: str = None):
-        """Start the requisition flow or handle full request"""
         if user_input:
             parts = user_input.split(',')
             if len(parts) == 4 and all(part.strip() for part in parts):
@@ -99,26 +125,31 @@ class RequisitionFlow(commands.Cog):
                 await ctx.send("Request timed out. Please try again.")
 
     async def create_requisition(self, ctx, material, quantity, payment, deadline):
-        # Try to parse the deadline from natural language to a datetime object
         parsed_deadline = parse(deadline)
         if not parsed_deadline:
             await ctx.send("Could not understand the deadline. Please enter a specific date.")
             return
         
-        # Format the deadline as a string, or use it as a datetime object as needed
         formatted_deadline = parsed_deadline.strftime('%Y-%m-%d %H:%M:%S')
         
-        # Prepare the data dictionary
         data = {
             'material': material,
             'quantity': quantity,
             'payment': payment,
-            'deadline': formatted_deadline  # Use the formatted deadline
+            'deadline': formatted_deadline
         }
         
-        # Validate the requisition data
         if self.validate_request(data):
             guild_id = ctx.guild.id
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None))
+                requisition_id = cur.fetchone()['id']
+                self.conn.commit()
+
             if guild_id in self.channel_ids and 'REQUISITIONS_CHANNEL_ID' in self.channel_ids[guild_id]:
                 channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
                 channel = self.bot.get_channel(channel_id)
@@ -131,15 +162,13 @@ class RequisitionFlow(commands.Cog):
                         f"**Deadline:** {formatted_deadline}\n"
                         "React with ✋ to accept this job. React with ✅ when completed.\n"
                     )
-                    self.active_requisitions[message.id] = {
-                        'requester': ctx.author.id,
-                        'material': material,
-                        'quantity': quantity,
-                        'payment': payment,
-                        'deadline': formatted_deadline,
-                        'accepted_by': [],
-                        'completed_by': []
-                    }
+                    with self.conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE requisitions
+                            SET message_id = %s
+                            WHERE id = %s;
+                        """, (message.id, requisition_id))
+                        self.conn.commit()
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
                     await self.send_reminder(ctx.author, f"Reminder: Your requisition for {material} is still open.", message.id)
@@ -179,7 +208,6 @@ class RequisitionFlow(commands.Cog):
                         await requester.send(f"All parties have completed the requisition for {requisition['material']}. Please confirm by reacting with ✅.")
 
         if user.id == requisition['requester'] and reaction.emoji == '✅' and len(requisition['completed_by']) == len(requisition['accepted_by']):
-            # Cancel the reminder before archiving
             self.cancel_reminder(message_id)
 
             archive_channel_id = self.channel_ids[guild_id]['ARCHIVE_CHANNEL_ID']
@@ -200,15 +228,13 @@ class RequisitionFlow(commands.Cog):
                 await message.delete()
                 del self.active_requisitions[message_id]
 
-                # Send DM to requester for feedback
                 dm_channel = await requester.create_dm()
-                await dm_channel.send("Your requisition has been completed and archived. **Please provide feedback on your experience** (a few sentences or less):")
+                await dm_channel.send("Your requisition has been completed and archived. Please provide feedback on your experience (a few sentences or less):")
 
                 def check(m):
                     return m.author == requester and isinstance(m.channel, discord.DMChannel)
 
-                # Wait for feedback
-                feedback_message = await self.bot.wait_for('message', check=check, timeout=300)  # 5 minutes timeout
+                feedback_message = await self.bot.wait_for('message', check=check, timeout=300)
                 if feedback_message:
                     await archived_message.edit(content=f"{archived_message.content}\nFeedback: {feedback_message.content}")
                     await dm_channel.send("Thank you for your feedback!")
@@ -221,12 +247,11 @@ class RequisitionFlow(commands.Cog):
 
     @commands.command(name='mm_update_request')
     async def mm_update_request(self, ctx, *, user_input: str = None):
-        """Update an existing requisition, either by entering all details at once or interactively."""
         if user_input:
             parts = user_input.split(',')
             if len(parts) == 4 and all(part.strip() for part in parts):
                 message_id, new_quantity, new_payment, new_deadline = (part.strip() for part in parts)
-                if new_quantity.isdigit() and message_id.isdigit():  # Ensure the message_id and new_quantity are valid numbers
+                if new_quantity.isdigit() and message_id.isdigit():
                     await self.update_requisition(ctx, message_id, int(new_quantity), new_payment, new_deadline)
                     return
                 else:
@@ -235,7 +260,6 @@ class RequisitionFlow(commands.Cog):
             else:
                 await ctx.send("Invalid format. Use: `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`")
         else:
-            # Start interactive mode
             await ctx.send("Please enter the message ID of the requisition you want to update:")
             message_id = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
             await ctx.send("Enter the new quantity:")
@@ -251,21 +275,18 @@ class RequisitionFlow(commands.Cog):
             await self.update_requisition(ctx, message_id.content, int(quantity_msg.content), payment.content, deadline.content)
 
     async def update_requisition(self, ctx, message_id, new_quantity, new_payment, new_deadline):
-        # Check if the message_id is valid
         if not message_id.isdigit():
             await ctx.send("Invalid message ID format.")
             return
         
         message_id = int(message_id)
         
-        # Check if the requisition exists
         if message_id not in self.active_requisitions:
             await ctx.send("Requisition not found.")
             return
 
         requisition = self.active_requisitions[message_id]
 
-        # Parse the new deadline
         parsed_deadline = parse(new_deadline)
         if not parsed_deadline:
             await ctx.send("Could not understand the deadline. Please enter a specific date.")
@@ -273,9 +294,8 @@ class RequisitionFlow(commands.Cog):
         
         formatted_deadline = parsed_deadline.strftime('%Y-%m-%d %H:%M:%S')
         
-        # Validate the new data
         data = {
-            'material': requisition['material'],  # Material is not being updated
+            'material': requisition['material'],
             'quantity': new_quantity,
             'payment': new_payment,
             'deadline': formatted_deadline
@@ -285,14 +305,12 @@ class RequisitionFlow(commands.Cog):
             await ctx.send(f"Validation failed: {v.errors}")
             return
         
-        # Update the requisition data
         requisition.update({
             'quantity': new_quantity,
             'payment': new_payment,
             'deadline': formatted_deadline
         })
         
-        # Get the guild ID and requisitions channel ID
         guild_id = ctx.guild.id
         requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
         requisitions_channel = self.bot.get_channel(requisitions_channel_id)
@@ -302,10 +320,8 @@ class RequisitionFlow(commands.Cog):
             return
         
         try:
-            # Fetch the original message
             message = await requisitions_channel.fetch_message(message_id)
             
-            # Edit the message with the updated requisition data
             await message.edit(
                 content=(
                     f"**Request from {ctx.author.mention}:**\n"
@@ -336,7 +352,7 @@ class RequisitionFlow(commands.Cog):
         if task:
             task.cancel()
             logger.info(f"Cancelled reminder for message ID: {message_id}")
-            del self.reminder_tasks[message_id]  # Cleanup the task from the dictionary
+            del self.reminder_tasks[message_id]
         else:
             logger.warning(f"No active reminder task found for message ID: {message_id}")
 

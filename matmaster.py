@@ -5,14 +5,22 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 from dateparser import parse
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s:%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger('discord')
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+DATABASE_URL = os.getenv('DATABASE_URL')
+
 if not DISCORD_TOKEN:
     logger.error("DISCORD_TOKEN not found in environment variables.")
+    exit(1)
+
+if not DATABASE_URL:
+    logger.error("DATABASE_URL not found in environment variables.")
     exit(1)
 
 # Configure intents
@@ -71,7 +79,8 @@ async def load_extensions():
 
 async def main():
     async with bot:
-        await load_extensions()
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require', cursor_factory=RealDictCursor)
+        await bot.add_cog(RequisitionFlow(bot, conn))
         await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
