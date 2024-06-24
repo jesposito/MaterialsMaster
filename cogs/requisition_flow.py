@@ -178,9 +178,10 @@ class RequisitionFlow(commands.Cog):
                     if requester:
                         await requester.send(f"All parties have completed the requisition for {requisition['material']}. Please confirm by reacting with ✅.")
 
-        if user.id == requisition['requester'] and len(requisition['completed_by']) == len(requisition['accepted_by']):
-            if requester:
-                await requester.send(f"The requisition for {requisition['material']} has been completed and confirmed.")
+        if user.id == requisition['requester'] and reaction.emoji == '✅' and len(requisition['completed_by']) == len(requisition['accepted_by']):
+            # Cancel the reminder before archiving
+            self.cancel_reminder(message_id)
+
             archive_channel_id = self.channel_ids[guild_id]['ARCHIVE_CHANNEL_ID']
             requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
             archive_channel = self.bot.get_channel(archive_channel_id)
@@ -188,15 +189,29 @@ class RequisitionFlow(commands.Cog):
 
             try:
                 message = await requisitions_channel.fetch_message(message_id)
-                await archive_channel.send(
+                archived_message = await archive_channel.send(
                     f"**Archived Request from {requester.mention}:**\n"
                     f"**Material:** {requisition['material']}\n"
                     f"**Quantity:** {requisition['quantity']}\n"
                     f"**Payment:** {requisition['payment']}\n"
-                    f"**Deadline:** {requisition['deadline']}"
+                    f"**Deadline:** {requisition['deadline']}\n"
+                    f"**Completed by:** {', '.join([self.bot.get_user(uid).mention for uid in requisition['completed_by']])}"
                 )
                 await message.delete()
                 del self.active_requisitions[message_id]
+
+                # Send DM to requester for feedback
+                dm_channel = await requester.create_dm()
+                await dm_channel.send("Your requisition has been completed and archived. Please provide feedback on your experience (a few sentences or less):")
+
+                def check(m):
+                    return m.author == requester and isinstance(m.channel, discord.DMChannel)
+
+                # Wait for feedback
+                feedback_message = await self.bot.wait_for('message', check=check, timeout=300)  # 5 minutes timeout
+                if feedback_message:
+                    await archived_message.edit(content=f"{archived_message.content}\nFeedback: {feedback_message.content}")
+                    await dm_channel.send("Thank you for your feedback!")
             except discord.NotFound:
                 logger.error("Message or channel not found")
             except discord.Forbidden:
@@ -205,50 +220,125 @@ class RequisitionFlow(commands.Cog):
                 logger.error(f"An unexpected error occurred: {str(e)}")
 
     @commands.command(name='mm_update_request')
-    async def mm_update_request(self, ctx, message_id: int, new_quantity: int = None, new_payment: str = None, new_deadline: str = None):
-        """Update an existing requisition"""
-        req = self.active_requisitions.get(message_id)
-        if req:
-            updates = {'quantity': new_quantity, 'payment': new_payment, 'deadline': new_deadline}
-            req.update({k: v for k, v in updates.items() if v is not None})
-            channel = self.bot.get_channel(self.channel_ids['REQUISITIONS_CHANNEL_ID'])
-            if channel:
-                message = await channel.fetch_message(message_id)
-                await message.edit(content=f"**Request from {ctx.author.mention}:**\n**Material:** {req['material']}\n**Quantity:** {req['quantity']}\n**Payment:** {req['payment']}\n**Deadline:** {req['deadline']}\nReact with ✋ to accept this job.")
-                await ctx.send("Requisition updated successfully.")
+    async def mm_update_request(self, ctx, *, user_input: str = None):
+        """Update an existing requisition, either by entering all details at once or interactively."""
+        if user_input:
+            parts = user_input.split(',')
+            if len(parts) == 4 and all(part.strip() for part in parts):
+                message_id, new_quantity, new_payment, new_deadline = (part.strip() for part in parts)
+                if new_quantity.isdigit() and message_id.isdigit():  # Ensure the message_id and new_quantity are valid numbers
+                    await self.update_requisition(ctx, message_id, int(new_quantity), new_payment, new_deadline)
+                    return
+                else:
+                    await ctx.send("Please ensure the message ID and quantity are numbers.")
+                    return
             else:
-                await ctx.send("Invalid requisitions channel ID.")
+                await ctx.send("Invalid format. Use: `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`")
         else:
-            await ctx.send("Invalid message ID.")
+            # Start interactive mode
+            await ctx.send("Please enter the message ID of the requisition you want to update:")
+            message_id = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            await ctx.send("Enter the new quantity:")
+            quantity_msg = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            if not quantity_msg.content.isdigit():
+                await ctx.send("Quantity must be a number. Try again.")
+                return
+            await ctx.send("Enter the new payment method:")
+            payment = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            await ctx.send("Enter the new deadline:")
+            deadline = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            
+            await self.update_requisition(ctx, message_id.content, int(quantity_msg.content), payment.content, deadline.content)
+
+    async def update_requisition(self, ctx, message_id, new_quantity, new_payment, new_deadline):
+        # Check if the message_id is valid
+        if not message_id.isdigit():
+            await ctx.send("Invalid message ID format.")
+            return
+        
+        message_id = int(message_id)
+        
+        # Check if the requisition exists
+        if message_id not in self.active_requisitions:
+            await ctx.send("Requisition not found.")
+            return
+
+        requisition = self.active_requisitions[message_id]
+
+        # Parse the new deadline
+        parsed_deadline = parse(new_deadline)
+        if not parsed_deadline:
+            await ctx.send("Could not understand the deadline. Please enter a specific date.")
+            return
+        
+        formatted_deadline = parsed_deadline.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Validate the new data
+        data = {
+            'material': requisition['material'],  # Material is not being updated
+            'quantity': new_quantity,
+            'payment': new_payment,
+            'deadline': formatted_deadline
+        }
+        
+        if not self.validate_request(data):
+            await ctx.send(f"Validation failed: {v.errors}")
+            return
+        
+        # Update the requisition data
+        requisition.update({
+            'quantity': new_quantity,
+            'payment': new_payment,
+            'deadline': formatted_deadline
+        })
+        
+        # Get the guild ID and requisitions channel ID
+        guild_id = ctx.guild.id
+        requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
+        requisitions_channel = self.bot.get_channel(requisitions_channel_id)
+
+        if not requisitions_channel:
+            await ctx.send("Requisitions channel not found or not set.")
+            return
+        
+        try:
+            # Fetch the original message
+            message = await requisitions_channel.fetch_message(message_id)
+            
+            # Edit the message with the updated requisition data
+            await message.edit(
+                content=(
+                    f"**Request from {ctx.author.mention}:**\n"
+                    f"**Material:** {requisition['material']}\n"
+                    f"**Quantity:** {new_quantity}\n"
+                    f"**Payment:** {new_payment}\n"
+                    f"**Deadline:** {formatted_deadline}\n"
+                    "React with ✋ to accept this job. React with ✅ when completed.\n"
+                )
+            )
+            
+            await ctx.send(f"Requisition {message_id} updated successfully.")
+        
+        except discord.NotFound:
+            await ctx.send("Original requisition message not found.")
+            logger.error("Requisition message not found")
+        
+        except discord.Forbidden:
+            await ctx.send("Bot lacks permissions to edit the requisition message.")
+            logger.error("Bot lacks permissions to edit messages in the requisitions channel")
+        
+        except Exception as e:
+            await ctx.send("An unexpected error occurred while updating the requisition message.")
+            logger.error(f"Unexpected error: {str(e)}")
     
     def cancel_reminder(self, message_id):
         task = self.reminder_tasks.get(message_id)
         if task:
-            try:
-                task.cancel()
-                logger.info(f"Cancelled reminder for message ID: {message_id}")
-            except asyncio.CancelledError:
-                logger.error(f"Attempted to cancel an already cancelled task for message ID: {message_id}")
-            finally:
-                del self.reminder_tasks[message_id]  # Always ensure to clean up
-
-    @commands.command(name='mm_progress')
-    async def mm_progress(self, ctx, message_id: int, percentage: int):
-        """Update the progress of gathering materials for a requisition"""
-        if message_id in self.active_requisitions:
-            self.active_requisitions[message_id]['progress'] = percentage
-            await ctx.send(f"Requisition progress updated to {percentage}%.")
+            task.cancel()
+            logger.info(f"Cancelled reminder for message ID: {message_id}")
+            del self.reminder_tasks[message_id]  # Cleanup the task from the dictionary
         else:
-            await ctx.send("Invalid message ID.")
-
-    @commands.command(name='mm_feedback')
-    async def mm_feedback(self, ctx, message_id: int, *, feedback: str):
-        """Collect feedback from requesters after a requisition is completed"""
-        if message_id in self.active_requisitions:
-            self.active_requisitions[message_id]['feedback'] = feedback
-            await ctx.send("Thank you for your feedback!")
-        else:
-            await ctx.send("Invalid message ID.")
+            logger.warning(f"No active reminder task found for message ID: {message_id}")
 
 async def setup(bot):
     await bot.add_cog(RequisitionFlow(bot))
