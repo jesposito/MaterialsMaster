@@ -1,4 +1,3 @@
-
 # Materials Master
 
 Materials Master is a Discord bot designed to help crafters place orders for gatherers to fulfill in the game Pax Dei. This bot streamlines the requisition process by allowing users to request materials, track progress, provide feedback, and manage archived jobs efficiently.
@@ -16,7 +15,6 @@ Materials Master is a Discord bot designed to help crafters place orders for gat
 ## Features
 
 - **Requisition Management**: Create, update, and track material requests.
-- **Progress Tracking**: Update the progress of requisitions.
 - **Feedback Collection**: Collect and archive feedback from requesters.
 - **Channel Setup**: Set channels for requisitions and archives.
 - **Reminders**: Automatic reminders for open requisitions.
@@ -74,18 +72,16 @@ Materials Master is a Discord bot designed to help crafters place orders for gat
 - `!mm_request [material, quantity, payment, deadline]`
   - Create a new requisition.
   - Example: `!mm_request Iron, 50, 10 Gold Bars, 2024-06-30`
+  - Alternatively, simply type `!mm_request` and the bot will guide you through the process interactively.
 
-- `!mm_update_request <message_id> [new_quantity] [new_payment] [new_deadline]`
+- `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`
   - Update an existing requisition.
-  - Example: `!mm_update_request 123456789012345678 60 20 Gold Bars 2024-07-31`
+  - Example: `!mm_update_request 123456789012345678, 60, 20 Gold Bars, 2024-07-31`
+  - Alternatively, simply type `!mm_update_request` and the bot will guide you through the update process interactively.
 
-- `!mm_progress <message_id> <percentage>`
-  - Update the progress of a requisition.
-  - Example: `!mm_progress 123456789012345678 50`
+### Feedback
 
-- `!mm_feedback <message_id> <feedback>`
-  - Provide feedback for a completed requisition.
-  - Example: `!mm_feedback 123456789012345678 The materials were delivered on time and in good condition.`
+- Once your requisition is completed and archived, you will receive a direct message to provide feedback. This helps us improve the process based on your experience.
 
 ## Storing the Discord Token
 
@@ -108,49 +104,3 @@ If you are running the bot locally, you can store the Discord token in a `.env` 
 1. **Install `python-dotenv`**:
    ```sh
    pip install python-dotenv
-   ```
-
-2. **Create a `.env` File**:
-   - Create a file named `.env` in the root of your project.
-   - Add your Discord token to this file:
-     ```env
-     DISCORD_TOKEN=your_discord_token_here
-     ```
-
-3. **Modify Your Code to Load the `.env` File**:
-   - In your `matmaster.py`, add the following at the top of the file:
-     ```python
-     from dotenv import load_dotenv
-     load_dotenv()
-     ```
-
-By following these steps, you ensure that your Discord token is securely stored and not hardcoded in your files.
-
-## Planned Features
-
-- **Persistence**: Save requisition data to a database for persistent storage.
-- **Improved Reminders**: Enhance reminder functionality with more flexible scheduling options.
-- **Archived Job Details**: Include details on who fulfilled the order and feedback in the archived post.
-- **Companion Site**: Create a website where orders can be looked up and managed.
-- **Donation Function**: Add a feature for users to donate and support the development.
-- **Server and Area Information**: Include server and area details in posts and make them filterable.
-
-## Contributing
-
-We welcome contributions to enhance the functionality of Materials Master. To contribute, follow these steps:
-
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature-branch`).
-3. Make your changes and commit them (`git commit -m 'Add some feature'`).
-4. Push to the branch (`git push origin feature-branch`).
-5. Create a pull request.
-
-Please make sure to update tests as appropriate.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
----
-
-Feel free to reach out for any support or questions regarding the setup and usage of Materials Master. Happy crafting!

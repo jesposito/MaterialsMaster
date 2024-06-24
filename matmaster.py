@@ -39,25 +39,31 @@ async def on_command_error(ctx, error):
 @bot.command(name='mm_help')
 async def mm_help(ctx):
     help_text = (
-        "**Crafting Requisition Bot Commands:**\n\n"
-        "__**Commands Overview:**__\n\n"
-        "**!mm_help**\nDisplays this help message.\n\n"
-        "**!mm_set_channels <requisitions_channel_id> <archive_channel_id>**\n"
-        "Set the channel IDs for requisitions and archive. Use in the format:\n"
-        "`!mm_set_channels 123456789012345678 987654321098765432`\n\n"
-        "**!mm_request [material, quantity, payment, deadline]**\n"
-        "Start a new requisition with the specified parameters. Use in the format:\n"
-        "`!mm_request Iron, 50, 10 Gold Bars, 2024-06-30`\n\n"
-        "**!mm_update_request <message_id> [new_quantity] [new_payment] [new_deadline]**\n"
-        "Update an existing requisition. Use in the format:\n"
-        "`!mm_update_request 123456789012345678 60 20 Gold Bars 2024-07-31`\n\n"
-        "**!mm_progress <message_id> <percentage>**\n"
-        "Update the progress of gathering materials for a requisition. Use in the format:\n"
-        "`!mm_progress 123456789012345678 50`\n\n"
-        "**!mm_feedback <message_id> <feedback>**\n"
-        "Collect feedback from requesters after a requisition is completed. Use in the format:\n"
-        "`!mm_feedback 123456789012345678 The materials were delivered on time and in good condition.`\n"
-    )
+    "**🛠️ Materials Master (MatMaster) Requisition Bot Commands:**\n\n"
+    "**Overview of Commands:**\n\n"
+    "**!mm_help**\n"
+    "Displays this help message. Use this command if you need a quick reminder of how to interact with me.\n\n"
+    
+    "**!mm_set_channels <requisitions_channel_id> <archive_channel_id>**\n"
+    "Sets up the channels for managing requisitions and archiving them once completed. Here’s how to set it up:\n"
+    "`!mm_set_channels 123456789012345678 987654321098765432`\n"
+    "> Make sure you replace the IDs with your actual channel IDs!\n\n"
+    
+    "**!mm_request [material, quantity, payment, deadline]**\n"
+    "Starts a new requisition. You can enter all details at once like this:\n"
+    "`!mm_request Iron, 50, 10 Gold Bars, 2024-06-30`\n"
+    "Or, simply type `!mm_request` and I'll guide you through the process interactively, asking for each detail one step at a time. This way, you can take your time providing the necessary information.\n\n"
+    
+    "**!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>**\n"
+    "Need to make changes to an existing requisition? Just let me know what needs updating. Here’s the format:\n"
+    "`!mm_update_request 123456789012345678, 60, 20 Gold Bars, 2024-07-31`\n"
+    "> Remember to include the message ID of the requisition you’re updating.\n"
+    "Or, simply type `!mm_update_request` and I'll guide you through the update process interactively, asking for each detail one step at a time.\n\n"
+    
+    "**Feedback on Requisitions**\n"
+    "Once your requisition is completed and archived, I’ll send you a direct message to collect your feedback. It’s a great way to let us know how the process went and how we can improve!\n"
+)
+
     await ctx.send(help_text)
 
 async def load_extensions():
