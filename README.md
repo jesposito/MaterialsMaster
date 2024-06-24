@@ -8,9 +8,10 @@ Materials Master is a Discord bot designed to help crafters place orders for gat
 1. [Features](#features)
 2. [Getting Started](#getting-started)
 3. [Commands](#commands)
-4. [Upcoming Features](#upcoming-features)
-5. [Contributing](#contributing)
-6. [License](#license)
+4. [Storing the Discord Token](#storing-the-discord-token)
+5. [Upcoming Features](#upcoming-features)
+6. [Contributing](#contributing)
+7. [License](#license)
 
 ## Features
 
@@ -85,6 +86,45 @@ Materials Master is a Discord bot designed to help crafters place orders for gat
 - `!mm_feedback <message_id> <feedback>`
   - Provide feedback for a completed requisition.
   - Example: `!mm_feedback 123456789012345678 The materials were delivered on time and in good condition.`
+
+## Storing the Discord Token
+
+### Using Environment Variables on Heroku
+
+If you are deploying your bot on Heroku, you can store the Discord token as an environment variable:
+
+1. **Go to Your Heroku Dashboard**:
+   - Select your application.
+   - Go to the "Settings" tab.
+   - Click "Reveal Config Vars".
+
+2. **Add the Discord Token**:
+   - Add a new variable with the key `DISCORD_TOKEN` and the value as your actual token.
+
+### Using a `.env` File Locally
+
+If you are running the bot locally, you can store the Discord token in a `.env` file. You will need to make sure you have the `python-dotenv` package installed to load the variables from this file.
+
+1. **Install `python-dotenv`**:
+   ```sh
+   pip install python-dotenv
+   ```
+
+2. **Create a `.env` File**:
+   - Create a file named `.env` in the root of your project.
+   - Add your Discord token to this file:
+     ```env
+     DISCORD_TOKEN=your_discord_token_here
+     ```
+
+3. **Modify Your Code to Load the `.env` File**:
+   - In your `matmaster.py`, add the following at the top of the file:
+     ```python
+     from dotenv import load_dotenv
+     load_dotenv()
+     ```
+
+By following these steps, you ensure that your Discord token is securely stored and not hardcoded in your files.
 
 ## Upcoming Features
 
