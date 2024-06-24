@@ -13,7 +13,7 @@ logger = logging.getLogger('discord')
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
     logger.error("DISCORD_TOKEN not found in environment variables.")
-    exit()
+    exit(1)
 
 # Configure intents
 intents = discord.Intents.default()

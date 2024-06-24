@@ -251,9 +251,85 @@ class RequisitionFlow(commands.Cog):
             await self.update_requisition(ctx, message_id.content, int(quantity_msg.content), payment.content, deadline.content)
 
     async def update_requisition(self, ctx, message_id, new_quantity, new_payment, new_deadline):
-        # Implement the update logic here, assuming you have a method to find and update the requisition by message_id
-        # For now, just sending a confirmation message
-        await ctx.send(f"Requisition {message_id} updated with quantity {new_quantity}, payment {new_payment}, and deadline {new_deadline}.")
+        # Check if the message_id is valid
+        if not message_id.isdigit():
+            await ctx.send("Invalid message ID format.")
+            return
+        
+        message_id = int(message_id)
+        
+        # Check if the requisition exists
+        if message_id not in self.active_requisitions:
+            await ctx.send("Requisition not found.")
+            return
+
+        requisition = self.active_requisitions[message_id]
+
+        # Parse the new deadline
+        parsed_deadline = parse(new_deadline)
+        if not parsed_deadline:
+            await ctx.send("Could not understand the deadline. Please enter a specific date.")
+            return
+        
+        formatted_deadline = parsed_deadline.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Validate the new data
+        data = {
+            'material': requisition['material'],  # Material is not being updated
+            'quantity': new_quantity,
+            'payment': new_payment,
+            'deadline': formatted_deadline
+        }
+        
+        if not self.validate_request(data):
+            await ctx.send(f"Validation failed: {v.errors}")
+            return
+        
+        # Update the requisition data
+        requisition.update({
+            'quantity': new_quantity,
+            'payment': new_payment,
+            'deadline': formatted_deadline
+        })
+        
+        # Get the guild ID and requisitions channel ID
+        guild_id = ctx.guild.id
+        requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
+        requisitions_channel = self.bot.get_channel(requisitions_channel_id)
+
+        if not requisitions_channel:
+            await ctx.send("Requisitions channel not found or not set.")
+            return
+        
+        try:
+            # Fetch the original message
+            message = await requisitions_channel.fetch_message(message_id)
+            
+            # Edit the message with the updated requisition data
+            await message.edit(
+                content=(
+                    f"**Request from {ctx.author.mention}:**\n"
+                    f"**Material:** {requisition['material']}\n"
+                    f"**Quantity:** {new_quantity}\n"
+                    f"**Payment:** {new_payment}\n"
+                    f"**Deadline:** {formatted_deadline}\n"
+                    "React with ✋ to accept this job. React with ✅ when completed.\n"
+                )
+            )
+            
+            await ctx.send(f"Requisition {message_id} updated successfully.")
+        
+        except discord.NotFound:
+            await ctx.send("Original requisition message not found.")
+            logger.error("Requisition message not found")
+        
+        except discord.Forbidden:
+            await ctx.send("Bot lacks permissions to edit the requisition message.")
+            logger.error("Bot lacks permissions to edit messages in the requisitions channel")
+        
+        except Exception as e:
+            await ctx.send("An unexpected error occurred while updating the requisition message.")
+            logger.error(f"Unexpected error: {str(e)}")
     
     def cancel_reminder(self, message_id):
         task = self.reminder_tasks.get(message_id)
