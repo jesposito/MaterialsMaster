@@ -230,9 +230,10 @@ class RequisitionFlow(commands.Cog):
 
                 dm_channel = await requester.create_dm()
                 await dm_channel.send(
-                    f"Your requisition has been completed and archived.\n"
+                    f"Your requisition has been completed and archived!\n"
+                    f"\n"
                     f"**Please provide feedback** on your experience in a few sentences.\n"
-                    f"I'll add it to the archived post. Procide feedback here:"
+                    f"I'll add it onto the archived post. Provide feedback here:"
                     )
 
                 def check(m):
