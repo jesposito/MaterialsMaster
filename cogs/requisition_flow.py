@@ -202,7 +202,7 @@ class RequisitionFlow(commands.Cog):
 
                 # Send DM to requester for feedback
                 dm_channel = await requester.create_dm()
-                await dm_channel.send("Your requisition has been completed and archived. Please provide feedback on your experience (a few sentences or less):")
+                await dm_channel.send("Your requisition has been completed and archived. **Please provide feedback on your experience** (a few sentences or less):")
 
                 def check(m):
                     return m.author == requester and isinstance(m.channel, discord.DMChannel)
