@@ -1,12 +1,12 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from cerberus import Validator
 import asyncio
 import logging
-import os
 from datetime import datetime, timedelta
 from dateparser import parse
 from psycopg2.extras import RealDictCursor
+import random
 
 logger = logging.getLogger('discord')
 
@@ -16,6 +16,7 @@ schema = {
     'quantity': {'type': 'integer', 'min': 1, 'required': True},
     'payment': {'type': 'string', 'required': True},
     'deadline': {'type': 'string', 'required': True},
+    'region': {'type': 'string', 'required': True}
 }
 v = Validator(schema)
 
@@ -28,6 +29,8 @@ class RequisitionFlow(commands.Cog):
         self.reminder_tasks = {}
         logger.info("RequisitionFlow cog initialized.")
         self.create_tables()
+        self.load_channel_ids()
+        self.load_active_requisitions()
 
     def create_tables(self):
         with self.conn.cursor() as cur:
@@ -41,17 +44,48 @@ class RequisitionFlow(commands.Cog):
                     deadline TIMESTAMP,
                     accepted_by BIGINT[],
                     completed_by BIGINT[],
-                    message_id BIGINT
+                    message_id BIGINT,
+                    region TEXT
                 );
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS channels (
                     guild_id BIGINT PRIMARY KEY,
                     requisitions_channel_id BIGINT,
-                    archive_channel_id BIGINT
+                    archive_channel_id BIGINT,
+                    server_name TEXT
                 );
             """)
             self.conn.commit()
+
+    def load_channel_ids(self):
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM channels")
+            rows = cur.fetchall()
+            for row in rows:
+                self.channel_ids[row['guild_id']] = {
+                    'REQUISITIONS_CHANNEL_ID': row['requisitions_channel_id'],
+                    'ARCHIVE_CHANNEL_ID': row['archive_channel_id'],
+                    'SERVER_NAME': row['server_name']
+                }
+        logger.info(f"Loaded channel IDs for {len(self.channel_ids)} guilds.")
+
+    def load_active_requisitions(self):
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM requisitions WHERE message_id IS NOT NULL")
+            rows = cur.fetchall()
+            for row in rows:
+                self.active_requisitions[row['message_id']] = {
+                    'requester': row['requester'],
+                    'material': row['material'],
+                    'quantity': row['quantity'],
+                    'payment': row['payment'],
+                    'deadline': row['deadline'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'accepted_by': row['accepted_by'],
+                    'completed_by': row['completed_by'],
+                    'region': row['region']
+                }
+        logger.info(f"Loaded active requisitions for {len(self.active_requisitions)} messages.")
 
     def validate_request(self, data):
         logger.debug(f"Validating request data: {data}")
@@ -70,31 +104,46 @@ class RequisitionFlow(commands.Cog):
         await user.send(message)
         logger.info(f"Reminder sent to user {user}")
 
-    @commands.command(name='mm_set_channels')
-    async def mm_set_channels(self, ctx, requisitions_channel_id: int, archive_channel_id: int):
+    @commands.command(name='mm_config')
+    @commands.has_permissions(administrator=True)
+    async def mm_config(self, ctx, requisitions_channel_id: int, archive_channel_id: int, *, server_name: str):
         guild_id = ctx.guild.id
         with self.conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO channels (guild_id, requisitions_channel_id, archive_channel_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO channels (guild_id, requisitions_channel_id, archive_channel_id, server_name)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (guild_id) DO UPDATE
                 SET requisitions_channel_id = EXCLUDED.requisitions_channel_id,
-                    archive_channel_id = EXCLUDED.archive_channel_id;
-            """, (guild_id, requisitions_channel_id, archive_channel_id))
+                    archive_channel_id = EXCLUDED.archive_channel_id,
+                    server_name = EXCLUDED.server_name;
+            """, (guild_id, requisitions_channel_id, archive_channel_id, server_name))
             self.conn.commit()
 
-        await ctx.send(f"Requisition channel set to <#{requisitions_channel_id}> and archive channel set to <#{archive_channel_id}> for {ctx.guild.name}")
+        self.channel_ids[guild_id] = {
+            'REQUISITIONS_CHANNEL_ID': requisitions_channel_id,
+            'ARCHIVE_CHANNEL_ID': archive_channel_id,
+            'SERVER_NAME': server_name
+        }
+
+        await ctx.send(f"Requisition channel set to <#{requisitions_channel_id}>, archive channel set to <#{archive_channel_id}>, and server name set to `{server_name}` for {ctx.guild.name}")
+
+    @mm_config.error
+    async def mm_config_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("You do not have the necessary permissions to use this command.")
+        else:
+            await ctx.send("An error occurred while processing the command.")
 
     @commands.command(name='mm_request')
     async def mm_request(self, ctx, *, user_input: str = None):
         if user_input:
             parts = user_input.split(',')
-            if len(parts) == 4 and all(part.strip() for part in parts):
-                material, quantity, payment, deadline = (part.strip() for part in parts)
+            if len(parts) == 5 and all(part.strip() for part in parts):
+                material, quantity, payment, deadline, region = (part.strip() for part in parts)
                 if quantity.isdigit():
-                    await self.create_requisition(ctx, material, int(quantity), payment, deadline)
+                    await self.create_requisition(ctx, material, int(quantity), payment, deadline, region)
                     return
-            await ctx.send("Invalid format. Use: `!mm_request [material, quantity, payment, deadline]` or follow the interactive prompts.")
+            await ctx.send("Invalid format. Use: `!mm_request [material, quantity, payment, deadline, region]` or follow the interactive prompts.")
         else:
             await ctx.send("What material do you need?")
             try:
@@ -108,23 +157,26 @@ class RequisitionFlow(commands.Cog):
                 payment = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
                 await ctx.send("What is the deadline?")
                 deadline = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+                await ctx.send("What is the region?")
+                region = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
 
                 data = {
                     'material': material.content,
                     'quantity': int(quantity_msg.content),
                     'payment': payment.content,
-                    'deadline': deadline.content
+                    'deadline': deadline.content,
+                    'region': region.content
                 }
 
                 if self.validate_request(data):
-                    await self.create_requisition(ctx, data['material'], data['quantity'], data['payment'], data['deadline'])
+                    await self.create_requisition(ctx, data['material'], data['quantity'], data['payment'], data['deadline'], data['region'])
                 else:
                     await ctx.send(f"Validation failed: {v.errors}")
 
             except asyncio.TimeoutError:
                 await ctx.send("Request timed out. Please try again.")
 
-    async def create_requisition(self, ctx, material, quantity, payment, deadline):
+    async def create_requisition(self, ctx, material, quantity, payment, deadline, region):
         parsed_deadline = parse(deadline)
         if not parsed_deadline:
             await ctx.send("Could not understand the deadline. Please enter a specific date.")
@@ -136,25 +188,28 @@ class RequisitionFlow(commands.Cog):
             'material': material,
             'quantity': quantity,
             'payment': payment,
-            'deadline': formatted_deadline
+            'deadline': formatted_deadline,
+            'region': region
         }
         
         if self.validate_request(data):
             guild_id = ctx.guild.id
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
-                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None))
+                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region))
                 requisition_id = cur.fetchone()['id']
                 self.conn.commit()
 
             if guild_id in self.channel_ids and 'REQUISITIONS_CHANNEL_ID' in self.channel_ids[guild_id]:
                 channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
+                server_name = self.channel_ids[guild_id]['SERVER_NAME']
                 channel = self.bot.get_channel(channel_id)
                 if channel:
-                    message = await channel.send(
+                    message_content = (
+                        f"**{server_name} - {region}**\n"
                         f"**Request from {ctx.author.mention}:**\n"
                         f"**Material:** {material}\n"
                         f"**Quantity:** {quantity}\n"
@@ -162,6 +217,7 @@ class RequisitionFlow(commands.Cog):
                         f"**Deadline:** {formatted_deadline}\n"
                         "React with ✋ to accept this job. React with ✅ when completed.\n"
                     )
+                    message = await channel.send(message_content)
                     with self.conn.cursor() as cur:
                         cur.execute("""
                             UPDATE requisitions
@@ -169,13 +225,23 @@ class RequisitionFlow(commands.Cog):
                             WHERE id = %s;
                         """, (message.id, requisition_id))
                         self.conn.commit()
+                    self.active_requisitions[message.id] = {
+                        'requester': ctx.author.id,
+                        'material': material,
+                        'quantity': quantity,
+                        'payment': payment,
+                        'deadline': formatted_deadline,
+                        'region': region,
+                        'accepted_by': [],
+                        'completed_by': []
+                    }
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
                     await self.send_reminder(ctx.author, f"Reminder: Your requisition for {material} is still open.", message.id)
                 else:
                     await ctx.send("Invalid requisitions channel ID.")
             else:
-                await ctx.send("Requisitions channel ID has not been set. Use the `!mm_set_channels` command to set it.")
+                await ctx.send("Requisitions channel ID has not been set. Use the `!mm_config` command to set it.")
         else:
             await ctx.send(f"Validation failed: {v.errors}")
 
@@ -217,7 +283,7 @@ class RequisitionFlow(commands.Cog):
 
             try:
                 message = await requisitions_channel.fetch_message(message_id)
-                archived_message = await archive_channel.send(
+                archived_message_content = (
                     f"**Archived Request from {requester.mention}:**\n"
                     f"**Material:** {requisition['material']}\n"
                     f"**Quantity:** {requisition['quantity']}\n"
@@ -225,6 +291,11 @@ class RequisitionFlow(commands.Cog):
                     f"**Deadline:** {requisition['deadline']}\n"
                     f"**Completed by:** {', '.join([self.bot.get_user(uid).mention for uid in requisition['completed_by']])}"
                 )
+                if random.random() < 0.1:  # 10% chance to include the donation link
+                    donate_message = "\n\nIf you find this bot helpful, please consider donating to support its development: https://ko-fi.com/jedespo"
+                    archived_message_content += donate_message
+
+                archived_message = await archive_channel.send(archived_message_content)
                 await message.delete()
                 del self.active_requisitions[message_id]
 
@@ -235,7 +306,7 @@ class RequisitionFlow(commands.Cog):
                     f"**Please provide feedback** on your experience in a few sentences.\n"
                     f"I'll add it onto the archived post. Provide feedback here:"
                     )
-
+                
                 def check(m):
                     return m.author == requester and isinstance(m.channel, discord.DMChannel)
 
