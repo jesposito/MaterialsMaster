@@ -229,7 +229,11 @@ class RequisitionFlow(commands.Cog):
                 del self.active_requisitions[message_id]
 
                 dm_channel = await requester.create_dm()
-                await dm_channel.send("Your requisition has been completed and archived. Please provide feedback on your experience (a few sentences or less):")
+                await dm_channel.send(
+                    f"Your requisition has been completed and archived.\n"
+                    f"**Please provide feedback** on your experience in a few sentences.\n"
+                    f"I'll add it to the archived post. Procide feedback here:"
+                    )
 
                 def check(m):
                     return m.author == requester and isinstance(m.channel, discord.DMChannel)

@@ -1,106 +1,69 @@
-# Materials Master
+# Materials Master (MatMaster) Requisition Bot
 
-Materials Master is a Discord bot designed to help crafters place orders for gatherers to fulfill in the game Pax Dei. This bot streamlines the requisition process by allowing users to request materials, track progress, provide feedback, and manage archived jobs efficiently.
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Getting Started](#getting-started)
-3. [Commands](#commands)
-4. [Storing the Discord Token](#storing-the-discord-token)
-5. [Upcoming Features](#upcoming-features)
-6. [Contributing](#contributing)
-7. [License](#license)
+MatMaster is a Discord bot designed to streamline material requisitions within a Discord server. It allows users to request materials, update requests, and provide feedback upon completion. The bot uses PostgreSQL for persistent storage, ensuring that data is not lost between restarts.
 
 ## Features
 
-- **Requisition Management**: Create, update, and track material requests.
-- **Feedback Collection**: Collect and archive feedback from requesters.
-- **Channel Setup**: Set channels for requisitions and archives.
-- **Reminders**: Automatic reminders for open requisitions.
+- **Request Materials**: Users can create material requisitions by specifying the material, quantity, payment method, and deadline.
+- **Update Requests**: Users can update existing requisitions with new details.
+- **Feedback Collection**: After a requisition is completed and archived, the bot sends a direct message to the requester to collect feedback.
+- **Persistent Storage**: Uses PostgreSQL to store requisitions and channel configurations, ensuring data is retained across bot restarts.
 
-## Getting Started
+## Pending Features
+
+- **Notification System**: Implementing notifications for pending requisitions close to their deadlines.
+- **Admin Commands**: Adding administrative commands for better management of requisitions and channels.
+- **Web Dashboard**: Developing a web dashboard for visualizing and managing requisitions.
+- **Enhanced Validation**: Improving validation for user inputs to ensure data integrity.
+
+## Setup and Deployment
 
 ### Prerequisites
 
-- Python 3.9.12
-- Discord bot token
-- Required Python packages (see `requirements.txt`)
+- [Python 3.8+](https://www.python.org/downloads/)
+- [Discord Bot Token](https://discord.com/developers/applications)
+- [Heroku CLI](https://devcenter.heroku.com/articles/heroku-cli)
+- [PostgreSQL Database](https://www.heroku.com/postgres)
 
-### Installation
+### Local Setup
 
-1. Clone the repository:
+1. **Clone the Repository**
+
     ```sh
-    git clone https://github.com/yourusername/materials-master.git
+    git clone https://github.com/your-username/materials-master.git
     cd materials-master
     ```
 
-2. Create and activate a virtual environment:
-    ```sh
-    python3 -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    ```
+2. **Create a Virtual Environment and Install Dependencies**
 
-3. Install dependencies:
     ```sh
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
     pip install -r requirements.txt
     ```
 
-4. Set up environment variables in a `.env` file:
+3. **Set Environment Variables**
+
+    Create a `.env` file and add your environment variables:
+
     ```env
-    DISCORD_TOKEN=your_discord_token_here
+    DISCORD_TOKEN=your_discord_token
+    DATABASE_URL=your_postgresql_database_url
     ```
 
-5. Run the bot:
+4. **Run the Bot Locally**
+
     ```sh
     python matmaster.py
     ```
 
 ## Commands
 
-### General Commands
+- **!mm_help**: Displays the help message.
+- **!mm_set_channels <requisitions_channel_id> <archive_channel_id>**: Sets up the channels for managing requisitions and archiving them once completed.
+- **!mm_request [material, quantity, payment, deadline]**: Starts a new requisition. You can enter all details at once or follow the interactive prompts.
+- **!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>**: Updates an existing requisition.
 
-- `!mm_help`
-  - Displays the help message with all available commands.
+## License
 
-### Requisition Commands
-
-- `!mm_set_channels <requisitions_channel_id> <archive_channel_id>`
-  - Set the channel IDs for requisitions and archives.
-  - Example: `!mm_set_channels 123456789012345678 987654321098765432`
-
-- `!mm_request [material, quantity, payment, deadline]`
-  - Create a new requisition.
-  - Example: `!mm_request Iron, 50, 10 Gold Bars, 2024-06-30`
-  - Alternatively, simply type `!mm_request` and the bot will guide you through the process interactively.
-
-- `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`
-  - Update an existing requisition.
-  - Example: `!mm_update_request 123456789012345678, 60, 20 Gold Bars, 2024-07-31`
-  - Alternatively, simply type `!mm_update_request` and the bot will guide you through the update process interactively.
-
-### Feedback
-
-- Once your requisition is completed and archived, you will receive a direct message to provide feedback. This helps us improve the process based on your experience.
-
-## Storing the Discord Token
-
-### Using Environment Variables on Heroku
-
-If you are deploying your bot on Heroku, you can store the Discord token as an environment variable:
-
-1. **Go to Your Heroku Dashboard**:
-   - Select your application.
-   - Go to the "Settings" tab.
-   - Click "Reveal Config Vars".
-
-2. **Add the Discord Token**:
-   - Add a new variable with the key `DISCORD_TOKEN` and the value as your actual token.
-
-### Using a `.env` File Locally
-
-If you are running the bot locally, you can store the Discord token in a `.env` file. You will need to make sure you have the `python-dotenv` package installed to load the variables from this file.
-
-1. **Install `python-dotenv`**:
-   ```sh
-   pip install python-dotenv
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
