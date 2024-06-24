@@ -126,7 +126,7 @@ If you are running the bot locally, you can store the Discord token in a `.env` 
 
 By following these steps, you ensure that your Discord token is securely stored and not hardcoded in your files.
 
-## Upcoming Features
+## Planned Features
 
 - **Persistence**: Save requisition data to a database for persistent storage.
 - **Improved Reminders**: Enhance reminder functionality with more flexible scheduling options.
