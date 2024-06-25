@@ -85,7 +85,7 @@ class RequisitionFlow(commands.Cog):
                     'accepted_by': row['accepted_by'],
                     'completed_by': row['completed_by'],
                     'region': row['region'],
-                    'completion_details': row['completion_details'] or ""
+                    'completion_details': row.get('completion_details', "")
                 }
         logger.info(f"Loaded active requisitions for {len(self.active_requisitions)} messages.")
 
