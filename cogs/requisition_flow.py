@@ -46,8 +46,7 @@ class RequisitionFlow(commands.Cog):
                     completed_by BIGINT[],
                     message_id BIGINT,
                     region TEXT,
-                    completion_details TEXT,
-                    guild_id BIGINT
+                    completion_details TEXT
                 );
             """)
             cur.execute("""
@@ -86,8 +85,7 @@ class RequisitionFlow(commands.Cog):
                     'accepted_by': row['accepted_by'],
                     'completed_by': row['completed_by'],
                     'region': row['region'],
-                    'completion_details': row.get('completion_details', ""),
-                    'guild_id': row['guild_id']
+                    'completion_details': row.get('completion_details', "")
                 }
         logger.info(f"Loaded active requisitions for {len(self.active_requisitions)} messages.")
 
@@ -200,10 +198,10 @@ class RequisitionFlow(commands.Cog):
             guild_id = ctx.guild.id
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region, guild_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
-                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region, guild_id))
+                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region))
                 requisition_id = cur.fetchone()['id']
                 self.conn.commit()
 
@@ -237,8 +235,7 @@ class RequisitionFlow(commands.Cog):
                         'deadline': formatted_deadline,
                         'region': region,
                         'accepted_by': [],
-                        'completed_by': [],
-                        'guild_id': guild_id
+                        'completed_by': []
                     }
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
@@ -277,9 +274,9 @@ class RequisitionFlow(commands.Cog):
                 if len(requisition['completed_by']) == len(requisition['accepted_by']):
                     if requester:
                         await requester.send(f"All parties have completed the requisition for {requisition['material']}. Please confirm by reacting with ✅.")
-                    await self.get_completion_details(requisition, user, requester, message_id)
+                    await self.get_completion_details(requisition, user, requester, message_id, guild_id)
 
-    async def get_completion_details(self, requisition, user, requester, message_id):
+    async def get_completion_details(self, requisition, user, requester, message_id, guild_id):
         try:
             await user.send(f"Please provide completion details for the requisition `{requisition['material']}` (e.g., where the resources are left, meeting arrangements, etc.). You have 5 minutes to respond.")
             completion_details = await self.bot.wait_for(
@@ -303,10 +300,9 @@ class RequisitionFlow(commands.Cog):
 
         await requester.send(f"Completion details for your requisition `{requisition['material']}`: {completion_details_text}")
 
-        await self.archive_requisition(requisition, message_id)
+        await self.archive_requisition(requisition, message_id, guild_id)
 
-    async def archive_requisition(self, requisition, message_id):
-        guild_id = requisition['guild_id']
+    async def archive_requisition(self, requisition, message_id, guild_id):
         archive_channel_id = self.channel_ids[guild_id]['ARCHIVE_CHANNEL_ID']
         archive_channel = self.bot.get_channel(archive_channel_id)
         requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
