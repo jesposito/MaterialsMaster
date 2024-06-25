@@ -46,7 +46,8 @@ class RequisitionFlow(commands.Cog):
                     completed_by BIGINT[],
                     message_id BIGINT,
                     region TEXT,
-                    completion_details TEXT
+                    completion_details TEXT,
+                    guild_id BIGINT
                 );
             """)
             cur.execute("""
@@ -85,7 +86,8 @@ class RequisitionFlow(commands.Cog):
                     'accepted_by': row['accepted_by'],
                     'completed_by': row['completed_by'],
                     'region': row['region'],
-                    'completion_details': row.get('completion_details', "")
+                    'completion_details': row.get('completion_details', ""),
+                    'guild_id': row['guild_id']
                 }
         logger.info(f"Loaded active requisitions for {len(self.active_requisitions)} messages.")
 
@@ -198,10 +200,10 @@ class RequisitionFlow(commands.Cog):
             guild_id = ctx.guild.id
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region, guild_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
-                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region))
+                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region, guild_id))
                 requisition_id = cur.fetchone()['id']
                 self.conn.commit()
 
@@ -235,7 +237,8 @@ class RequisitionFlow(commands.Cog):
                         'deadline': formatted_deadline,
                         'region': region,
                         'accepted_by': [],
-                        'completed_by': []
+                        'completed_by': [],
+                        'guild_id': guild_id
                     }
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
