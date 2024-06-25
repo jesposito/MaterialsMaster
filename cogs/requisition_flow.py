@@ -3,7 +3,7 @@ from discord.ext import commands
 from cerberus import Validator
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateparser import parse
 from psycopg2.extras import RealDictCursor
 import random
@@ -147,36 +147,39 @@ class RequisitionFlow(commands.Cog):
                     return
             await ctx.send("Invalid format. Use: `!mm_request [material, quantity, payment, deadline, region]` or follow the interactive prompts.")
         else:
+            def check(author):
+                return lambda message: message.author == author and message.channel == ctx.channel
+
             await ctx.send("What material do you need?")
-            try:
-                material = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
-                await ctx.send("How many do you need?")
-                quantity_msg = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
-                if not quantity_msg.content.isdigit():
-                    await ctx.send("Quantity must be a number.")
-                    return
-                await ctx.send("What is the payment method?")
-                payment = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
-                await ctx.send("What is the deadline?")
-                deadline = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
-                await ctx.send("What is the region?")
-                region = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            material = await self.bot.wait_for('message', check=check(ctx.author))
+            
+            await ctx.send("How many do you need?")
+            quantity_msg = await self.bot.wait_for('message', check=check(ctx.author))
+            if not quantity_msg.content.isdigit():
+                await ctx.send("Quantity must be a number.")
+                return
+            
+            await ctx.send("What is the payment method?")
+            payment = await self.bot.wait_for('message', check=check(ctx.author))
+            
+            await ctx.send("What is the deadline?")
+            deadline = await self.bot.wait_for('message', check=check(ctx.author))
+            
+            await ctx.send("What is the region?")
+            region = await self.bot.wait_for('message', check=check(ctx.author))
 
-                data = {
-                    'material': material.content,
-                    'quantity': int(quantity_msg.content),
-                    'payment': payment.content,
-                    'deadline': deadline.content,
-                    'region': region.content
-                }
+            data = {
+                'material': material.content,
+                'quantity': int(quantity_msg.content),
+                'payment': payment.content,
+                'deadline': deadline.content,
+                'region': region.content
+            }
 
-                if self.validate_request(data):
-                    await self.create_requisition(ctx, data['material'], data['quantity'], data['payment'], data['deadline'], data['region'])
-                else:
-                    await ctx.send(f"Validation failed: {v.errors}")
-
-            except asyncio.TimeoutError:
-                await ctx.send("Request timed out. Please try again.")
+            if self.validate_request(data):
+                await self.create_requisition(ctx, data['material'], data['quantity'], data['payment'], data['deadline'], data['region'])
+            else:
+                await ctx.send(f"Validation failed: {v.errors}")
 
     async def create_requisition(self, ctx, material, quantity, payment, deadline, region):
         parsed_deadline = parse(deadline)
@@ -283,11 +286,10 @@ class RequisitionFlow(commands.Cog):
 
     async def get_completion_details(self, requisition, user, requester, message_id, guild_id):
         try:
-            await user.send(f"Please provide completion details for the requisition `{requisition['material']}` (e.g., where the resources are left, meeting arrangements, etc.). You have 5 minutes to respond.")
+            await user.send(f"Please provide completion details for the requisition `{requisition['material']}` (e.g., where the resources are left, meeting arrangements, etc.).")
             completion_details = await self.bot.wait_for(
                 'message',
-                check=lambda message: message.author == user and isinstance(message.channel, discord.DMChannel),
-                timeout=300
+                check=lambda message: message.author == user and isinstance(message.channel, discord.DMChannel)
             )
             completion_details_text = completion_details.content
         except asyncio.TimeoutError:
@@ -303,12 +305,11 @@ class RequisitionFlow(commands.Cog):
             """, (completion_details_text, message_id))
             self.conn.commit()
 
-        await requester.send(f"Completion details for your requisition `{requisition['material']}`: {completion_details_text}. Please confirm the completion by reacting with ✅ within 5 minutes.")
+        await requester.send(f"Completion details for your requisition `{requisition['material']}`: {completion_details_text}. Please confirm the completion by reacting with ✅.")
         
         try:
             confirm = await self.bot.wait_for(
                 'reaction_add',
-                timeout=300,
                 check=lambda reaction, user: user == requester and str(reaction.emoji) == '✅' and reaction.message.id == message_id
             )
             await self.archive_requisition(requisition, message_id, guild_id)
@@ -372,7 +373,7 @@ class RequisitionFlow(commands.Cog):
             def check(m):
                 return m.author == requester and isinstance(m.channel, discord.DMChannel)
 
-            feedback_message = await self.bot.wait_for('message', check=check, timeout=300)
+            feedback_message = await self.bot.wait_for('message', check=check)
             if feedback_message:
                 await archived_message.edit(content=f"{archived_message.content}\n**Feedback:** {feedback_message.content}")
                 await dm_channel.send("Thank you for your feedback!")
@@ -398,17 +399,20 @@ class RequisitionFlow(commands.Cog):
             else:
                 await ctx.send("Invalid format. Use: `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`")
         else:
+            def check(author):
+                return lambda message: message.author == author and message.channel == ctx.channel
+
             await ctx.send("Please enter the message ID of the requisition you want to update:")
-            message_id = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            message_id = await self.bot.wait_for('message', check=check(ctx.author))
             await ctx.send("Enter the new quantity:")
-            quantity_msg = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            quantity_msg = await self.bot.wait_for('message', check=check(ctx.author))
             if not quantity_msg.content.isdigit():
                 await ctx.send("Quantity must be a number. Try again.")
                 return
             await ctx.send("Enter the new payment method:")
-            payment = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            payment = await self.bot.wait_for('message', check=check(ctx.author))
             await ctx.send("Enter the new deadline:")
-            deadline = await self.bot.wait_for('message', check=lambda message: message.author == ctx.author and message.channel == ctx.channel, timeout=60)
+            deadline = await self.bot.wait_for('message', check=check(ctx.author))
             
             await self.update_requisition(ctx, message_id.content, int(quantity_msg.content), payment.content, deadline.content)
 
