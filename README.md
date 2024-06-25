@@ -1,106 +1,67 @@
-# Materials Master
+# Materials Master (MatMaster) Requisition Bot
 
-Materials Master is a Discord bot designed to help crafters place orders for gatherers to fulfill in the game Pax Dei. This bot streamlines the requisition process by allowing users to request materials, track progress, provide feedback, and manage archived jobs efficiently.
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Getting Started](#getting-started)
-3. [Commands](#commands)
-4. [Storing the Discord Token](#storing-the-discord-token)
-5. [Upcoming Features](#upcoming-features)
-6. [Contributing](#contributing)
-7. [License](#license)
+Welcome to Materials Master (MatMaster), a Discord bot designed to facilitate teamwork in resource gathering for games like Pax Dei. MatMaster helps players create and manage requisitions for materials, making it easier to collaborate and fulfill resource requests efficiently.
 
 ## Features
 
-- **Requisition Management**: Create, update, and track material requests.
-- **Feedback Collection**: Collect and archive feedback from requesters.
-- **Channel Setup**: Set channels for requisitions and archives.
-- **Reminders**: Automatic reminders for open requisitions.
+### 1. Requisition Management
+MatMaster allows users to create, manage, and track requisitions for materials. Requisitions include details such as material type, quantity, payment method, deadline, and region.
 
-## Getting Started
+### 2. Interactive Commands
+Users can interact with MatMaster through simple commands. The bot provides guidance for creating and updating requisitions, ensuring a smooth user experience.
 
-### Prerequisites
+### 3. Channel Configuration
+Server administrators can configure requisition and archive channels for managing and storing completed requisitions. The bot also requires the server name to distinguish between different servers.
 
-- Python 3.9.12
-- Discord bot token
-- Required Python packages (see `requirements.txt`)
+### 4. Reaction-Based Workflow
+MatMaster uses Discord reactions to manage the workflow of requisitions. Users can accept jobs by reacting with ✋ and mark them as completed with ✅.
 
-### Installation
+### 5. Feedback Collection
+After a requisition is completed, MatMaster collects feedback from the requester to improve the process and provide insights for future collaborations.
 
-1. Clone the repository:
-    ```sh
-    git clone https://github.com/yourusername/materials-master.git
-    cd materials-master
-    ```
-
-2. Create and activate a virtual environment:
-    ```sh
-    python3 -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    ```
-
-3. Install dependencies:
-    ```sh
-    pip install -r requirements.txt
-    ```
-
-4. Set up environment variables in a `.env` file:
-    ```env
-    DISCORD_TOKEN=your_discord_token_here
-    ```
-
-5. Run the bot:
-    ```sh
-    python matmaster.py
-    ```
+### 6. Donation Support
+Users can support the development of MatMaster by donating through a provided link. The donation link is occasionally included in archived requisition posts.
 
 ## Commands
 
-### General Commands
+### Help Command
+- **`!mm_help`**: Displays a help message with an overview of all commands.
 
-- `!mm_help`
-  - Displays the help message with all available commands.
+### Configuration Command
+- **`!mm_config <requisitions_channel_id> <archive_channel_id> <server_name>`**: Configures the channels for managing requisitions and sets the server name. This command is restricted to users with administrator permissions.
 
 ### Requisition Commands
+- **`!mm_request [material, quantity, payment, deadline, region]`**: Starts a new requisition. Users can either provide all details at once or be guided through the process interactively.
+- **`!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`**: Updates an existing requisition. Users can provide the details at once or be guided through the update process interactively.
 
-- `!mm_set_channels <requisitions_channel_id> <archive_channel_id>`
-  - Set the channel IDs for requisitions and archives.
-  - Example: `!mm_set_channels 123456789012345678 987654321098765432`
+## Usage Workflow
 
-- `!mm_request [material, quantity, payment, deadline]`
-  - Create a new requisition.
-  - Example: `!mm_request Iron, 50, 10 Gold Bars, 2024-06-30`
-  - Alternatively, simply type `!mm_request` and the bot will guide you through the process interactively.
+1. **Adding the Bot**: When MatMaster is added to a server, it sends a welcome message prompting the administrators to configure the requisitions and archive channels using the `!mm_config` command.
 
-- `!mm_update_request <message_id>, <new_quantity>, <new_payment>, <new_deadline>`
-  - Update an existing requisition.
-  - Example: `!mm_update_request 123456789012345678, 60, 20 Gold Bars, 2024-07-31`
-  - Alternatively, simply type `!mm_update_request` and the bot will guide you through the update process interactively.
+2. **Creating a Requisition**:
+   - A user types `!mm_request` in a text channel.
+   - The bot prompts for the material, quantity, payment method, deadline, and region if not provided as a single input.
+   - The bot validates the input and creates a requisition if valid, posting it in the configured requisitions channel with reactions for accepting and completing the job.
 
-### Feedback
+3. **Accepting and Completing Jobs**:
+   - Users can accept the job by reacting with ✋ and mark it as completed with ✅.
+   - Once all parties have completed the requisition, the requester confirms completion with a ✅ reaction.
+   - The requisition is moved to the archive channel.
 
-- Once your requisition is completed and archived, you will receive a direct message to provide feedback. This helps us improve the process based on your experience.
+4. **Collecting Feedback**:
+   - After moving the requisition to the archive channel, the bot asks the requester for feedback, which is appended to the archived message.
 
-## Storing the Discord Token
+## Example Use Case
 
-### Using Environment Variables on Heroku
+In games like Pax Dei, where players need to gather resources collaboratively, MatMaster helps coordinate efforts by:
+- Allowing players to request materials and specify the quantity, payment, deadline, and region.
+- Enabling other players to accept and complete these requests efficiently.
+- Storing completed requests in an archive for future reference and feedback.
 
-If you are deploying your bot on Heroku, you can store the Discord token as an environment variable:
+## Support the Bot
 
-1. **Go to Your Heroku Dashboard**:
-   - Select your application.
-   - Go to the "Settings" tab.
-   - Click "Reveal Config Vars".
+If you find MatMaster helpful, please consider donating to support its development: [Ko-fi Donation Link](https://ko-fi.com/jedespo).
 
-2. **Add the Discord Token**:
-   - Add a new variable with the key `DISCORD_TOKEN` and the value as your actual token.
+## Conclusion
 
-### Using a `.env` File Locally
-
-If you are running the bot locally, you can store the Discord token in a `.env` file. You will need to make sure you have the `python-dotenv` package installed to load the variables from this file.
-
-1. **Install `python-dotenv`**:
-   ```sh
-   pip install python-dotenv
+MatMaster is a versatile and user-friendly bot that enhances teamwork and resource management in gaming communities. By providing a structured and interactive way to handle requisitions, it ensures players can focus on what they do best—playing the game and collaborating with their teammates. Enjoy using MatMaster and happy gathering!
