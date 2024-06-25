@@ -45,7 +45,8 @@ class RequisitionFlow(commands.Cog):
                     accepted_by BIGINT[],
                     completed_by BIGINT[],
                     message_id BIGINT,
-                    region TEXT
+                    region TEXT,
+                    completion_details TEXT
                 );
             """)
             cur.execute("""
@@ -83,7 +84,8 @@ class RequisitionFlow(commands.Cog):
                     'deadline': row['deadline'].strftime('%Y-%m-%d %H:%M:%S'),
                     'accepted_by': row['accepted_by'],
                     'completed_by': row['completed_by'],
-                    'region': row['region']
+                    'region': row['region'],
+                    'completion_details': row['completion_details'] or ""
                 }
         logger.info(f"Loaded active requisitions for {len(self.active_requisitions)} messages.")
 
@@ -196,10 +198,10 @@ class RequisitionFlow(commands.Cog):
             guild_id = ctx.guild.id
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO requisitions (requester, material, quantity, payment, deadline, accepted_by, completed_by, message_id, region, completion_details)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
-                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region))
+                """, (ctx.author.id, material, quantity, payment, formatted_deadline, [], [], None, region, ""))
                 requisition_id = cur.fetchone()['id']
                 self.conn.commit()
 
@@ -233,7 +235,8 @@ class RequisitionFlow(commands.Cog):
                         'deadline': formatted_deadline,
                         'region': region,
                         'accepted_by': [],
-                        'completed_by': []
+                        'completed_by': [],
+                        'completion_details': ""
                     }
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
@@ -272,6 +275,28 @@ class RequisitionFlow(commands.Cog):
                 if len(requisition['completed_by']) == len(requisition['accepted_by']):
                     if requester:
                         await requester.send(f"All parties have completed the requisition for {requisition['material']}. Please confirm by reacting with ✅.")
+                        await user.send("Please provide details of where you've placed the resources or if you will meet or have met in-game. Reply with your details or type 'skip' to skip this step.")
+                        
+                        def check(m):
+                            return m.author == user and isinstance(m.channel, discord.DMChannel)
+
+                        try:
+                            completion_details_msg = await self.bot.wait_for('message', check=check, timeout=300)
+                            if completion_details_msg.content.lower() != 'skip':
+                                completion_details = completion_details_msg.content
+                                requisition['completion_details'] = completion_details
+                                with self.conn.cursor() as cur:
+                                    cur.execute("""
+                                        UPDATE requisitions
+                                        SET completion_details = %s
+                                        WHERE message_id = %s;
+                                    """, (completion_details, message_id))
+                                    self.conn.commit()
+                                await requester.send(f"Completion details for your requisition:\n**Details:** {completion_details}")
+                            else:
+                                await requester.send("No additional completion details were provided.")
+                        except asyncio.TimeoutError:
+                            await requester.send("No completion details were provided in time.")
 
         if user.id == requisition['requester'] and reaction.emoji == '✅' and len(requisition['completed_by']) == len(requisition['accepted_by']):
             self.cancel_reminder(message_id)
@@ -284,13 +309,16 @@ class RequisitionFlow(commands.Cog):
             try:
                 message = await requisitions_channel.fetch_message(message_id)
                 archived_message_content = (
+                    f"**{self.channel_ids[guild_id]['SERVER_NAME']} - {requisition['region']}**\n"
                     f"**Archived Request from {requester.mention}:**\n"
                     f"**Material:** {requisition['material']}\n"
                     f"**Quantity:** {requisition['quantity']}\n"
                     f"**Payment:** {requisition['payment']}\n"
                     f"**Deadline:** {requisition['deadline']}\n"
-                    f"**Completed by:** {', '.join([self.bot.get_user(uid).mention for uid in requisition['completed_by']])}"
+                    f"**Completed by:** {', '.join([self.bot.get_user(uid).mention for uid in requisition['completed_by']])}\n"
                 )
+                if requisition['completion_details']:
+                    archived_message_content += f"**Completion Details:** {requisition['completion_details']}\n"
                 if random.random() < 0.1:  # 10% chance to include the donation link
                     donate_message = "\n\nIf you find this bot helpful, please consider donating to support its development: https://ko-fi.com/jedespo"
                     archived_message_content += donate_message
@@ -307,12 +335,12 @@ class RequisitionFlow(commands.Cog):
                     f"I'll add it onto the archived post. Provide feedback here:"
                     )
                 
-                def check(m):
+                def check_feedback(m):
                     return m.author == requester and isinstance(m.channel, discord.DMChannel)
 
-                feedback_message = await self.bot.wait_for('message', check=check, timeout=300)
+                feedback_message = await self.bot.wait_for('message', check=check_feedback, timeout=300)
                 if feedback_message:
-                    await archived_message.edit(content=f"{archived_message.content}\nFeedback: {feedback_message.content}")
+                    await archived_message.edit(content=f"{archived_message.content}\n**Feedback:** {feedback_message.content}")
                     await dm_channel.send("Thank you for your feedback!")
             except discord.NotFound:
                 logger.error("Message or channel not found")
