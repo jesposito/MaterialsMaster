@@ -65,8 +65,9 @@ async def mm_help(ctx):
         "Need to make changes to an existing requisition? Just let me know what needs updating. Here’s the format:\n"
         "`!mm_update_request 123456789012345678, 60, 20 Gold Bars, 2024-07-31`\n"
         "> Remember to include the message ID of the requisition you’re updating.\n"
-        "Or, simply type `!mm_update_request` and I'll guide you through the update process interactively, asking for each detail one step at a time.\n\n"
-        
+        "Or, simply type `!mm_update_request` and I'll guide you through the update process interactively, asking for each detail one step at a time.\n"
+        "The person requesting the requisition can cancel it at any time by reacting with the red X.\n\n"
+
         "**Feedback on Requisitions**\n"
         "Once your requisition is completed and archived, I’ll send you a direct message to collect your feedback. It’s a great way to let others know who to work with!\n\n"
         

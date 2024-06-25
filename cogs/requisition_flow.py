@@ -218,6 +218,7 @@ class RequisitionFlow(commands.Cog):
                         f"**Payment:** {payment}\n"
                         f"**Deadline:** {formatted_deadline}\n"
                         "React with ✋ to accept this job. React with ✅ when completed.\n"
+                        "Requestor or admin can react with ❌ to cancel this job.\n"
                     )
                     message = await channel.send(message_content)
                     with self.conn.cursor() as cur:
@@ -235,7 +236,8 @@ class RequisitionFlow(commands.Cog):
                         'deadline': formatted_deadline,
                         'region': region,
                         'accepted_by': [],
-                        'completed_by': []
+                        'completed_by': [],
+                        'completion_details': ""
                     }
                     await message.add_reaction('✋')
                     await message.add_reaction('✅')
@@ -276,6 +278,9 @@ class RequisitionFlow(commands.Cog):
                         await requester.send(f"All parties have completed the requisition for {requisition['material']}. Please confirm by reacting with ✅.")
                     await self.get_completion_details(requisition, user, requester, message_id, guild_id)
 
+        elif reaction.emoji == '❌' and (user.id == requisition['requester'] or reaction.message.channel.permissions_for(user).administrator):
+            await self.cancel_requisition(requisition, message_id, guild_id)
+
     async def get_completion_details(self, requisition, user, requester, message_id, guild_id):
         try:
             await user.send(f"Please provide completion details for the requisition `{requisition['material']}` (e.g., where the resources are left, meeting arrangements, etc.). You have 5 minutes to respond.")
@@ -298,9 +303,35 @@ class RequisitionFlow(commands.Cog):
             """, (completion_details_text, message_id))
             self.conn.commit()
 
-        await requester.send(f"Completion details for your requisition `{requisition['material']}`: {completion_details_text}")
+        await requester.send(f"Completion details for your requisition `{requisition['material']}`: {completion_details_text}. Please confirm the completion by reacting with ✅ within 5 minutes.")
+        
+        try:
+            confirm = await self.bot.wait_for(
+                'reaction_add',
+                timeout=300,
+                check=lambda reaction, user: user == requester and str(reaction.emoji) == '✅' and reaction.message.id == message_id
+            )
+            await self.archive_requisition(requisition, message_id, guild_id)
+        except asyncio.TimeoutError:
+            await requester.send("Confirmation timeout. Please manually confirm the completion.")
 
-        await self.archive_requisition(requisition, message_id, guild_id)
+    async def cancel_requisition(self, requisition, message_id, guild_id):
+        requisitions_channel_id = self.channel_ids[guild_id]['REQUISITIONS_CHANNEL_ID']
+        requisitions_channel = self.bot.get_channel(requisitions_channel_id)
+
+        try:
+            message = await requisitions_channel.fetch_message(message_id)
+            await message.delete()
+            del self.active_requisitions[message_id]
+
+            requester = self.bot.get_user(requisition['requester'])
+            await requester.send(f"Your requisition for {requisition['material']} has been cancelled.")
+        except discord.NotFound:
+            logger.error("Message or channel not found")
+        except discord.Forbidden:
+            logger.error("Bot lacks permissions to delete messages in the requisitions channel")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {str(e)}")
 
     async def archive_requisition(self, requisition, message_id, guild_id):
         archive_channel_id = self.channel_ids[guild_id]['ARCHIVE_CHANNEL_ID']
@@ -431,12 +462,13 @@ class RequisitionFlow(commands.Cog):
             
             await message.edit(
                 content=(
-                    f"**Request from {ctx.author.mention}:**\n"
+                    f"**Request from {self.bot.get_user(requisition['requester']).mention}:**\n"
                     f"**Material:** {requisition['material']}\n"
                     f"**Quantity:** {new_quantity}\n"
                     f"**Payment:** {new_payment}\n"
                     f"**Deadline:** {formatted_deadline}\n"
                     "React with ✋ to accept this job. React with ✅ when completed.\n"
+                    "Requestor or admin can react with ❌ to cancel this job.\n"
                 )
             )
             
