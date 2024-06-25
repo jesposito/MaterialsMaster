@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: matmaster-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python matmaster.py"
