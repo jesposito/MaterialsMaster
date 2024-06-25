@@ -5,7 +5,7 @@ import os
 import asyncio
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from requisition_flow import RequisitionFlow
+from cogs.requisition_flow import RequisitionFlow
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s:%(levelname)s:%(name)s:%(message)s')
